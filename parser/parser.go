@@ -2,6 +2,7 @@ package parser
 
 import (
 	"io"
+	"strings"
 
 	"golang.org/x/net/html"
 )
@@ -15,63 +16,53 @@ type Parser struct {
 	File io.Reader
 }
 
-func (p Parser) Parse() ([]Link, error) {
-	tokenizer := html.NewTokenizer(p.File)
-	linksMap := make(map[string]string)
+func linkNodes(node *html.Node) []*html.Node {
+	if node.Type == html.ElementNode && node.Data == "a" {
+		return []*html.Node{node}
+	}
 
-	depth := 0
-	key := ""
-    var err error
-	for {
-		tt := tokenizer.Next()
-		switch tt {
-		case html.ErrorToken:
-			err = tokenizer.Err()
-            break
-		case html.StartTagToken, html.EndTagToken:
-			tn, _ := tokenizer.TagName()
-			if len(tn) == 1 && tn[0] == 'a' {
-				if tt == html.StartTagToken {
-					depth++
-				} else {
-					depth--
-				}
+	var ret []*html.Node
+	for c := node.FirstChild; c != nil; c = c.NextSibling {
+		ret = append(ret, linkNodes(c)...)
+	}
 
-				if depth == 1 {
-					tk, tv, _ := tokenizer.TagAttr()
-					if string(tk) == "href" {
-						key = string(tv)
-					}
-				} else if depth == 0 {
-					key = ""
-				}
-			}
-		case html.TextToken:
-			if depth == 1 {
-				b := tokenizer.Text()
-				if key != "" {
-					linksMap[key] += string(b)
-				}
-			}
-		case html.CommentToken:
-			continue
+	return ret
+}
+
+func textNodes(node *html.Node) []string {
+	if node.Type == html.TextNode {
+		return []string{node.Data}
+	}
+
+	var ret []string
+	for c := node.FirstChild; c != nil; c = c.NextSibling {
+		ret = append(ret, textNodes(c)...)
+	}
+
+	return ret
+}
+
+func buildLink(n *html.Node) Link {
+	var link Link
+	for _, a := range n.Attr {
+		if a.Key == "href" {
+			link.Href = a.Val
+			break
 		}
+	}
+	link.Text = strings.TrimSpace(strings.Join(textNodes(n), ""))
+	return link
+}
 
-        if err != nil {
-            if err.Error() == "EOF" {
-                break
-            }
-            return nil, err
-        }
+func (p Parser) Parse() ([]Link, error) {
+	node, err := html.Parse(p.File)
+	if err != nil {
+		return nil, err
 	}
 
 	links := []Link{}
-	for k, v := range linksMap {
-		links = append(links, Link{
-			Href: k,
-			Text: v,
-		})
+	for _, v := range linkNodes(node) {
+		links = append(links, buildLink(v))
 	}
-
 	return links, nil
 }
