@@ -1,7 +1,29 @@
 package main
 
-import "fmt"
+import (
+	"flag"
+	"fmt"
+	"gophercises/html-link-parser/parser"
+	"os"
+)
 
 func main() {
-    fmt.Println("Excersise 4: HTML Link Parserer")
+	filename := flag.String("f", "", "html file to parse")
+	flag.Parse()
+
+	file, err := os.Open(*filename)
+	if err != nil {
+		panic(err)
+	}
+	defer file.Close()
+
+    p := parser.Parser{
+        File: file,
+    }
+
+    links, err := p.Parse()
+    if err != nil {
+        panic(err)
+    }
+    fmt.Printf("%+v", links)
 }
